@@ -5,7 +5,7 @@
 #' @param center PCA centering
 #' @return Result from PCA
 #' @export
-pca <- function(data_matrix, cumulative_var = 0.9){
+pca <- function(data_matrix, variance_threshold = 0.9){
   pca_result <- prcomp(data_matrix, scale = FALSE, center= TRUE)
 
   explained_variance <- pca_result$sdev^2 / sum(pca_result$sdev^2)
