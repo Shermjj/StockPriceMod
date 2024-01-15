@@ -1,8 +1,7 @@
 #' PCA Function
 #'
 #' @param data_matrix
-#' @param scale PCA scaling
-#' @param center PCA centering
+#' @param variance_threshold cumulative variance threshold
 #' @return Result from PCA
 #' @export
 pca <- function(data_matrix, variance_threshold = 0.9){
