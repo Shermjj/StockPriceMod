@@ -1,5 +1,5 @@
 ---
-title: "Group Project on Financial Data"
+title: "Stock Portfolio Optimisation Notebook"
 output:
   pdf_document: default
 ---
@@ -20,7 +20,7 @@ In this project, we work with financial time-series data, specifically, the pric
 2. Modelling of prices of factors using **Gaussian Process Regression**
 3. Portfolio optimisation using **Markowitz Mean-Variance Optimization Model**
 
-This full, 3 step weight estimation procedure is consolidated into the tested and documented "StockPriceMod" R package which we developed, which is available on github [here](https://github.com/Shermjj/StockPriceMod). This notebook will also explain each of the three stages of the procedure on a sample of the dataset, before performing the full experiment on the year of 2020.
+This full, 3 step weight estimation procedure is consolidated into the tested and documented `StockPriceMod` R package which we developed, which is available on github [here](https://github.com/Shermjj/StockPriceMod). This notebook will also explain each of the three stages of the procedure on a sample of the dataset, before performing the full experiment on the year of 2020.
 
 # Dataset
 We obtain a dataset of stock prices from the Standard and Poor's 500 (S&P 500) index through Yahoo Finance. The total number of dates we obtained is from 2020-01-02 to 2022-12-30, with the Open, High, Low, Close, Adjusted Close Prices (in US dollars), and the Volume and Ticker. We have a total of 499 unique Stock tickers, noting that althought the S&P 500 refers to the 500 largest companies, there may be different classes of shares/stocks issued and due to some data API issues we were not able to obtain the full stock lists. 
@@ -65,8 +65,6 @@ title("Stock Prices for Apple in the year 2020")
 
 
 ## Data Preprocessing
-https://gregorygundersen.com/blog/2022/02/06/log-returns/
-
 As opposed to raw prices, it is usually standard in financial analysis to transform to the **return** of an asset (our stock), which we define as being $r_t = \frac{P_t - P_{t-1}}{P_{t-1}} = \frac{P_t}{P_{t-1}} - 1$, where the stock has price $P_t$ at time $t$ and price $P_{t-1}$ at time $t-1$. In order to obtain unbounded support of our returns, we further transform to the **log-returns**, which is defined as $z_t = \log (1 + r_t) = \log (\frac{p_t}{p_{t-1}})$.  Finally, in our case, due to the use of the SSM modelling, we will use the **cumulative log-returns** instead, which we define as:
 $$
 r_{0:t} = 1 + \log \frac{p_t}{p_0} = 1 + \log p_t - \log p_0
@@ -138,14 +136,14 @@ long_data <- y_df %>%
   pivot_longer(
     cols = -Date,  # -Date means to keep the Date column as is
     names_to = "PCs",  # This will be the new column for stock names
-    values_to = "Price"  # This will be the new column for stock prices
+    values_to = "log_cum_returns"  # This will be the new column for stock prices
   )
 
-ggplot(long_data, aes(x = Date, y = Price, color = PCs)) +
+ggplot(long_data, aes(x = Date, y = log_cum_returns, color = PCs)) +
   geom_line() +
   scale_x_continuous(breaks = 1:max(long_data$Date)) +
   theme_minimal() +
-  labs(title = "PC Prices Over Time", x = "Day", y = "Price")
+  labs(title = "PC Log Cumulative Returns Over Time", x = "Day", y = "Log Cumulative Returns")
 ```
 # SSM and GPR Modelling
 In this section we will try to predict the log returns of each PCs using a State Space Model, or equivalently, the Gaussian Process Regression. Each PC's behaviour is viewed as an independent time series (due to the orthogonality of the PCs), and we will fit each time series with the simple linear state-space model:$$X_t = \phi X_{t-1} + V$$ $$Y_t = X_t + W$$ where
@@ -292,8 +290,6 @@ legend(1,.95,legend= c('Observation','Predicted','99% Upper Confidence Interval'
 ```
 
 # Portfolio Optimisation
-https://sites.math.washington.edu/~burke/crs/408/fin-proj/mark1.pdf 
-
 The well-known **Markowitz’s Mean-Variance Optimisation** is the basis of our Portfolio strategy. In this setting, the return on assets are modelled as random variables, and the goal is to choose a portfolio of **weighting factors** through an optimality criterion. Specifically, we have $n$ stocks which we weight in our portfolio with a set of weighting factors $\{w_i\}_{i=1}^p$. The idea then is to maximize the expected return and to minimize the volatility at the same time. Mathematically speaking, we aim to maximize \[\mathbb{E}[R] = \sum_{i}w_i\mathbb{E}[R_i] \] 
 subject to minimize\[\sigma^2 = \sum_{i,j}w_iw_j\sigma_i \sigma_j \rho_{ij}\]
 where $\{R_i\}_i$ is the percentage return on the underlying assets; $\{w_i\}_i$ is the respective proportion that sum to 1; $\{\sigma_i\}$ is the standard deviation of the return on the $i$th underlying asset and $\rho_{ij}$ is the correlation between $i$th return and $j$th return.
@@ -342,29 +338,28 @@ QP_result$solution
 ```
 
 # Experiments
-We utilise our developed package, "StockPriceMod" which is available on github [here](https://github.com/Shermjj/StockPriceMod) to perform our portfolio optimisation over the year 2020. This package can be install with the command `devtools::install_github('Shermjj/StockPriceMod')`. 
+We utilise our developed package, `StockPriceMod` which is available on github [here](https://github.com/Shermjj/StockPriceMod) to perform our portfolio optimisation over the year 2020 with a 7 day rolling window. This package can be install with the command `devtools::install_github('Shermjj/StockPriceMod')`. 
 
 ```{r}
 rm("kalman", "kf.gp", "optim_parm", "kf.loglikelihood", "kf.loglikelihood1") #First clear the environment of the previously defined functions due to conflicts
 library(StockPriceMod) 
 
-mu_list <- list()
-var_list <- list()
-weights_list <- list()
-mu_list[[1]] <- pred_returns
-var_list[[1]] <- time_series_df[[2]]
-weights_list[[1]] = QP_result$solution
+weights <- list()
+weights[[1]] = QP_result$solution
+profits <- c(pred_returns %*% QP_result$solution)
+vars <- c(time_series_df[[2]] %*% (QP_result$solution ** 2))
 
-for(idx in seq(1,24)){
-  start_day <- idx * 10
-  end_day <- start_day + 10 # We use a 10 day rolling window
+for(idx in seq(1,34)){
+  start_day <- idx * 7
+  end_day <- start_day + 7 # We use a 7 day rolling window
   
   # Calculate logarithmic returns
   log_cu_returns <- wide_data[start_day:end_day, ] %>%
     mutate(across(-Date, ~log(. / .[1]) + 1)) %>%
     select(-Date) 
   
-  pca_result <- pca(log_cu_returns)
+  y <- pca(log_cu_returns, variance_threshold = 0.9)$pcs
+  num_components <- ncol(y)
   
   time_series_df <- data.frame(matrix(ncol = 2, nrow = num_components))
   rownames(time_series_df) <- paste("PC", 1:num_components, sep = "")
@@ -381,9 +376,28 @@ for(idx in seq(1,24)){
   }
 
   pred_returns <- time_series_df$mu - tail(y,1) #z_T+1
-  mu_list[[idx+1]] <- pred_returns
-  var_list[[idx+1]] <- time_series_df[[2]]
   covar_mat <- diag(time_series_df[[2]])
-  weights_list[[idx+1]] <- port_opt(covar_mat, pred_returns, num_components)
+  weights[[idx+1]] <- port_opt(covar_mat, pred_returns, num_components)
+  profits <- append(pred_returns %*% weights[[idx+1]], profits)
+  vars <- append(time_series_df[[2]] %*% (weights[[idx+1]] ** 2), vars)
 }
+```
+
+We can see the average profit and loss (P&L) and the associated variance for each portfolio, as well as a scatterplot for each portfolio.
+```{r}
+portfolios_df <- data.frame(
+  Portfolio = paste("Portfolio", 1:length(profits)),
+  Profit_Loss = profits,
+  Variance = vars
+)
+ggplot(portfolios_df, aes(y = Profit_Loss, x = Variance, label = Portfolio)) +
+  geom_point() +  # Add points
+#  geom_text(nudge_y = 0.1) +  # Add text labels slightly above the points
+  theme_minimal() +
+  labs(title = "Profit/Loss vs Variance for Different Portfolios",
+       y = "Profit/Loss",
+       x = "Variance")
+
+print(mean(profits))
+print(mean(vars))
 ```
